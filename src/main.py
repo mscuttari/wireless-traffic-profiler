@@ -3,7 +3,7 @@ import re
 import sys
 from classifier import Classifier
 
-WINDOW_SIZE_DEFAULT = 5
+WINDOW_SIZE_DEFAULT = 1
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -19,19 +19,23 @@ if __name__ == "__main__":
         print("Invalid MAC address")
         sys.exit(1)
 
-    #cap = pyshark.LiveCapture(interface=interface)
-    cap = pyshark.FileCapture("/home/mscuttari/Scrivania/test_capture.pcapng")
+    # Capture filter (capture only packets involving the specified MAC address + all the probe requests to track time)
+    mac = mac.replace("-", ":")
+    filter = "wlan.da == " + mac + " || wlan.sa == " + mac + " || wlan.fc.type_subtype == 0x0008"
 
-    classifier = Classifier(window_size=window_size)
+    cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
+    #cap = pyshark.FileCapture("/home/mscuttari/Scrivania/wireless_internet_project/src/captures/youtube.pcap", only_summaries=True, display_filter=filter)
 
-    #for packet in cap.sniff_continuously():
-    for packet in cap:
+    classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
+
+    for packet in cap.sniff_continuously():
+    #for packet in cap:
         try:
-            if packet.wlan.da == mac:
+            if packet.destination == mac:
                 classifier.add(packet)
         except:
             pass
 
-        classifier.update_current_time(packet.sniff_time)
-        classifier.update_features()
+        classifier.update_current_time(float(packet.time))
         print(classifier.get_features())
+
