@@ -23,9 +23,9 @@ if __name__ == "__main__":
         print("Invalid MAC address")
         sys.exit(1)
 
-    # Capture filter (capture only packets involving the specified MAC address + all the probe requests to track time)
+    # Capture only the data packets involving the specified MAC address + all the probe requests to track time
     mac = mac.replace("-", ":")
-    filter = "wlan.da == " + mac + " || wlan.sa == " + mac + " || wlan.fc.type_subtype == 0x0008"
+    filter = "((wlan.da == " + mac + " || wlan.sa == " + mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
 
     # Create the classifier and load the pre-trained model
     classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
         now = datetime.datetime.now()
 
-        if (now - start) / timedelta(seconds=1) > 2:
+        if ((now - start) / timedelta(microseconds=1000)) / 1000 > window_size / 2:
             start = now
             classifier.print_features()
             classifier.predict()

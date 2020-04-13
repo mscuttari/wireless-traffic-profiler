@@ -23,21 +23,25 @@ class Classifier:
         self.__window_size = window_size
         self.__incremental_computation_threshold = incremental_computation_threshold
 
-        self.__packets = []
-        self.__sizes = []
-        self.__inter_arrival_times = []
+        self.__packets = []              # Arrived packets
+        self.__sizes = []                # Position i contains the size of packet i of __packets
+        self.__inter_arrival_times = []  # Position i contains the inter arrival time between packet i and i + 1 of __packets
 
+        # Packet size statistics
         self.__size_mean = 0
         self.__size_m2 = 0
         self.__size_m3 = 0
         self.__size_m4 = 0
 
+        # Inter arrival time statistics
         self.__time_mean = 0
         self.__time_m2 = 0
         self.__time_m3 = 0
         self.__time_m4 = 0
 
         self.__svc = OneVsRestClassifier(SVC(max_iter=20000))
+        self.__scaler = StandardScaler()
+
         self.__state = '-'
 
     def add(self, packet):
@@ -119,8 +123,7 @@ class Classifier:
         :param current_time: last and most recently known capture time
         """
 
-        while len(self.__packets) > 2 and \
-                (current_time - self.__packets[1].time) > self.__window_size:
+        while len(self.__packets) > 2 and (current_time - self.__packets[1].time) > self.__window_size:
 
             self.__packets.pop(0)
             x_t_size = self.__sizes.pop(0)
@@ -264,6 +267,9 @@ class Classifier:
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20)
 
         # Train and evaluate accuracy
+        x_train = self.__scaler.fit_transform(x_train)
+        x_test = self.__scaler.transform(x_test)
+
         self.__svc.fit(x_train, y_train)
         y_pred = self.__svc.predict(x_test)
 
@@ -275,7 +281,7 @@ class Classifier:
 
         :param path: where the model has to be saved
         """
-        dump(self.__svc, path)
+        dump([self.__svc, self.__scaler], path)
 
     def load_trained_model(self, model_path: str):
         """
@@ -283,7 +289,9 @@ class Classifier:
 
         :param model_path: pre-trained model path
         """
-        self.__svc = load(model_path)
+        self.__svc, self.__scaler = load(model_path)
+        print("Mean: " + str(self.__scaler.mean_))
+        print("Var: " + str(self.__scaler.var_))
 
     def print_features(self):
         time = 0 if len(self.__packets) == 0 else self.__packets[-1].time
@@ -293,7 +301,9 @@ class Classifier:
               (time, len(self.__packets), features[0], features[1], features[2], features[3], features[4]))
 
     def predict(self):
-        action = self.__svc.predict([self.features])[0]
+        data = [self.features]
+        data = self.__scaler.transform(data)
+        action = self.__svc.predict(data)[0]
 
         if action != self.__state:
             print("Action: " + str(action))

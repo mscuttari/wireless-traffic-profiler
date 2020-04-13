@@ -1,3 +1,4 @@
+import datetime
 import pyshark
 import re
 import sys
@@ -7,6 +8,7 @@ import numpy as np
 import csv
 
 from classifier import Classifier
+from datetime import timedelta
 
 
 class Trainer:
@@ -19,6 +21,10 @@ class Trainer:
         self.__trained = False
 
     def load_capture(self):
+        """
+        Parse a capture file and extract the features to be used to train the model
+        """
+
         print("Capture file: ", end='')
         file = input()
 
@@ -46,14 +52,16 @@ class Trainer:
         print("Traffic class: ", end='')
         traffic_class = input()
 
-        filter = "wlan.da == " + mac + " || wlan.sa == " + mac + " || wlan.fc.type_subtype == 0x0008"
+        filter = "((wlan.da == " + mac + " || wlan.sa == " + mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
         cap = pyshark.FileCapture(file, only_summaries=True, display_filter=filter)
         classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
 
-        counter = 0
+        packet_counter = 0
+        samples_counter = 0
+        start = 0
 
         for packet in cap:
-            counter += 1
+            packet_counter += 1
 
             try:
                 if direction == 'D' and packet.destination == mac:
@@ -63,27 +71,35 @@ class Trainer:
             except:
                 pass
 
-            classifier.update_current_time(float(packet.time))
-            features = classifier.features
+            now = float(packet.time)
+            classifier.update_current_time(now)
 
-            self.__x.append(features)
-            self.__y.append(traffic_class)
+            if now - start > window_size / 3:
+                samples_counter += 1
+                self.__x.append(classifier.features)
+                self.__y.append(traffic_class)
 
         cap.close()
-        print("%d packets processed" % counter)
+
+        print("%d packets processed" % packet_counter)
+        print("%d samples added" % samples_counter)
 
     def train(self):
-        if len(self.__y) <= 1:
-            print("At least two classes required")
-            return
+        """
+        Train the classifier.
+        """
 
         accuracy = self.__classifier.train(self.__x, self.__y)
         self.__trained = True
-        print("Model trained. Accuracy = " + str(accuracy))
+        print("Classifier trained. Accuracy = " + str(accuracy))
 
     def save(self):
+        """
+        Save the trained model to file.
+        """
+
         if not self.__trained:
-            print("Model not trained yet")
+            print("Classifier not trained yet")
             return
 
         print("Path: ", end='')
