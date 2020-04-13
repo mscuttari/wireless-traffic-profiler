@@ -1,18 +1,22 @@
 import pyshark
 import re
 import sys
+import datetime
+from datetime import timedelta
+
 from classifier import Classifier
 
-WINDOW_SIZE_DEFAULT = 1
+WINDOW_SIZE_DEFAULT = 5
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python %s interface_name mac_address [window_size]" % sys.argv[0])
+    if len(sys.argv) < 4:
+        print("Usage: python %s interface_name mac_address model [window_size]" % sys.argv[0])
         sys.exit(1)
 
     interface = sys.argv[1]     # Wireless interface to listen on
     mac = sys.argv[2].lower()   # MAC address of the machine whose traffic has to be profiled
-    window_size = WINDOW_SIZE_DEFAULT if len(sys.argv) == 3 else sys.argv[3]    # Window size in seconds
+    model = sys.argv[3]
+    window_size = WINDOW_SIZE_DEFAULT if len(sys.argv) == 4 else int(sys.argv[4])   # Window size in seconds
 
     # Check if the MAC address is valid
     if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac):
@@ -23,19 +27,31 @@ if __name__ == "__main__":
     mac = mac.replace("-", ":")
     filter = "wlan.da == " + mac + " || wlan.sa == " + mac + " || wlan.fc.type_subtype == 0x0008"
 
-    cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
-    #cap = pyshark.FileCapture("/home/mscuttari/Scrivania/wireless_internet_project/src/captures/youtube.pcap", only_summaries=True, display_filter=filter)
-
     classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
+    classifier.load_trained_model(model)
+    print("Loaded pre-trained model " + model)
+
+    cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
+
+    start = datetime.datetime.now()
 
     for packet in cap.sniff_continuously():
-    #for packet in cap:
         try:
             if packet.destination == mac:
                 classifier.add(packet)
         except:
             pass
 
+        now = datetime.datetime.now()
+        print("Time: %.2f" % float(packet.time))
+        classifier.print_features()
+
+        if (now - start) / timedelta(seconds=1) > 2:
+            start = now
+
+            classifier.predict()
+
         classifier.update_current_time(float(packet.time))
-        print(classifier.get_features())
+
+
 

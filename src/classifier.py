@@ -1,6 +1,13 @@
 import statistics
+
+from joblib import dump, load
 from scipy.stats import kurtosis
-from sklearn import svm
+from sklearn.ensemble import BaggingClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
 
 
 class Classifier:
@@ -17,117 +24,219 @@ class Classifier:
         self.__incremental_computation_threshold = incremental_computation_threshold
 
         self.__packets = []
+        self.__sizes = []
         self.__inter_arrival_times = []
 
-        self.__mean = 0
-        self.__m2 = 0
-        self.__m3 = 0
-        self.__m4 = 0
+        self.__size_mean = 0
+        self.__size_m2 = 0
+        self.__size_m3 = 0
+        self.__size_m4 = 0
+
+        self.__time_mean = 0
+        self.__time_m2 = 0
+        self.__time_m3 = 0
+        self.__time_m4 = 0
+
+        self.__svc = OneVsRestClassifier(BaggingClassifier(SVC(max_iter=20000)))
+        self.__action = '-'
 
     def add(self, packet):
         packet.time = float(packet.time)
 
         if len(self.__packets) != 0:
-            x_t = (packet.time - self.__packets[-1].time) * 1000
-            self.__inter_arrival_times.append(x_t)
+            self.__inter_arrival_times.append((packet.time - self.__packets[-1].time) * 1000)
 
+        self.__sizes.append(int(packet.length))
         self.__packets.append(packet)
 
         # Update the statistics
 
-        if len(self.__inter_arrival_times) <= self.__incremental_computation_threshold:
-            self.__mean = statistics.mean(self.__inter_arrival_times) if len(self.__inter_arrival_times) != 0 else 0
+        if len(self.__packets) <= self.__incremental_computation_threshold:
+            self.__size_mean = statistics.mean(self.__sizes) if len(self.__sizes) != 0 else 0
+            self.__size_m2 = 0
+            self.__size_m3 = 0
+            self.__size_m4 = 0
 
-            self.__m2 = 0
-            self.__m3 = 0
-            self.__m4 = 0
+            for size in self.__sizes:
+                self.__size_m2 += pow(size - self.__size_mean, 2)
+                self.__size_m3 += pow(size - self.__size_mean, 2)
+                self.__size_m4 += pow(size - self.__size_mean, 4)
+
+            self.__time_mean = statistics.mean(self.__inter_arrival_times) if len(self.__inter_arrival_times) != 0 else 0
+            self.__time_m2 = 0
+            self.__time_m3 = 0
+            self.__time_m4 = 0
 
             for time in self.__inter_arrival_times:
-                self.__m2 += pow(time - self.__mean, 2)
-                self.__m3 += pow(time - self.__mean, 2)
-                self.__m4 += pow(time - self.__mean, 4)
+                self.__time_m2 += pow(time - self.__time_mean, 2)
+                self.__time_m3 += pow(time - self.__time_mean, 2)
+                self.__time_m4 += pow(time - self.__time_mean, 4)
 
         else:
-            x_t = self.__inter_arrival_times[-1]
+            # Packet size statistics
+            x_t_size = self.__sizes[-1]
+            t = len(self.__sizes)
+
+            mean = self.__size_mean + (x_t_size - self.__size_mean) / t
+            m2 = self.__size_m2 + (x_t_size - self.__size_mean) * (x_t_size - mean)
+
+            m3 = self.__size_m3 - 3 * (x_t_size - self.__size_mean) * self.__size_m2 / t + \
+                 (t - 1) * (t - 2) * pow(x_t_size - self.__size_mean, 3) / pow(t, 2)
+
+            m4 = self.__size_m4 - 4 * (x_t_size - self.__size_mean) * self.__size_m3 / t + \
+                 6 * pow((x_t_size - self.__size_mean) / t, 2) * self.__size_m2 + \
+                 (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t_size - self.__size_mean, 4) / pow(t, 3)
+
+            self.__size_mean = mean
+            self.__size_m2 = m2
+            self.__size_m3 = m3
+            self.__size_m4 = m4
+
+            # Inter arrival time statistics
+            x_t_time = self.__inter_arrival_times[-1]
             t = len(self.__inter_arrival_times)
 
-            mean = self.__mean + (x_t - self.__mean) / t
-            m2 = self.__m2 + (x_t - self.__mean) * (x_t - mean)
+            mean = self.__time_mean + (x_t_time - self.__time_mean) / t
+            m2 = self.__time_m2 + (x_t_time - self.__time_mean) * (x_t_time - mean)
 
-            m3 = self.__m3 - 3 * (x_t - self.__mean) * self.__m2 / t + \
-                 (t - 1) * (t - 2) * pow(x_t - self.__mean, 3) / pow(t, 2)
+            m3 = self.__time_m3 - 3 * (x_t_time - self.__time_mean) * self.__time_m2 / t + \
+                 (t - 1) * (t - 2) * pow(x_t_time - self.__time_mean, 3) / pow(t, 2)
 
-            m4 = self.__m4 - 4 * (x_t - self.__mean) * self.__m3 / t + \
-                 6 * pow((x_t - self.__mean) / t, 2) * self.__m2 + \
-                 (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t - self.__mean, 4) / pow(t, 3)
+            m4 = self.__time_m4 - 4 * (x_t_time - self.__time_mean) * self.__time_m3 / t + \
+                 6 * pow((x_t_time - self.__time_mean) / t, 2) * self.__time_m2 + \
+                 (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t_time - self.__time_mean, 4) / pow(t, 3)
 
-            self.__mean = mean
-            self.__m2 = m2
-            self.__m3 = m3
-            self.__m4 = m4
+            self.__time_mean = mean
+            self.__time_m2 = m2
+            self.__time_m3 = m3
+            self.__time_m4 = m4
 
     def update_current_time(self, current_time: float):
         """
         Inform the classifier that the time is passing.
         The old packets exceeding the time window are removed.
+
+        :param current_time: last and most recently known capture time
         """
 
         while len(self.__packets) > 2 and \
                 (current_time - self.__packets[1].time) > self.__window_size:
 
             self.__packets.pop(0)
-            x_t = self.__inter_arrival_times.pop(0)
+            x_t_size = self.__sizes.pop(0)
+            x_t_time = self.__inter_arrival_times.pop(0)
 
             # Update the statistics
 
-            if len(self.__inter_arrival_times) <= self.__incremental_computation_threshold:
-                self.__mean = statistics.mean(self.__inter_arrival_times) if len(self.__inter_arrival_times) != 0 else 0
+            if len(self.__packets) <= self.__incremental_computation_threshold:
+                # Packet size statistics
+                self.__size_mean = statistics.mean(self.__sizes) if len(self.__sizes) != 0 else 0
 
-                self.__m2 = 0
-                self.__m3 = 0
-                self.__m4 = 0
+                self.__size_m2 = 0
+                self.__size_m3 = 0
+                self.__size_m4 = 0
+
+                for size in self.__sizes:
+                    self.__size_m2 += pow(size - self.__size_mean, 2)
+                    self.__size_m3 += pow(size - self.__size_mean, 2)
+                    self.__size_m4 += pow(size - self.__size_mean, 4)
+
+                # Inter arrival time statistics
+                self.__time_mean = statistics.mean(self.__inter_arrival_times) if len(self.__inter_arrival_times) != 0 else 0
+
+                self.__time_m2 = 0
+                self.__time_m3 = 0
+                self.__time_m4 = 0
 
                 for time in self.__inter_arrival_times:
-                    self.__m2 += pow(time - self.__mean, 2)
-                    self.__m3 += pow(time - self.__mean, 2)
-                    self.__m4 += pow(time - self.__mean, 4)
+                    self.__time_m2 += pow(time - self.__time_mean, 2)
+                    self.__time_m3 += pow(time - self.__time_mean, 2)
+                    self.__time_m4 += pow(time - self.__time_mean, 4)
 
             else:
+                # Packet size statistics
+                t = len(self.__sizes) + 1
+
+                mean = (t * self.__size_mean - x_t_size) / (t - 1)
+                m2 = self.__size_m2 - (x_t_size - mean) * (x_t_size - self.__size_mean)
+                m3 = self.__size_m3 + 3 * (x_t_size - mean) * m2 / t - (t - 1) * (t - 2) * pow(x_t_size - mean, 3) / pow(t, 2)
+
+                m4 = self.__size_m4 + 4 * (x_t_size - mean) * m3 / t - 6 * pow((x_t_size - mean) / t, 2) * m2 - \
+                     (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t_size - mean, 4) / pow(t, 3)
+
+                self.__size_mean = mean
+                self.__size_m2 = m2
+                self.__size_m3 = m3
+                self.__size_m4 = m4
+
+                # Inter arrival time statistics
                 t = len(self.__inter_arrival_times) + 1
 
-                mean = (t * self.__mean - x_t) / (t - 1)
-                m2 = self.__m2 - (x_t - mean) * (x_t - self.__mean)
-                m3 = self.__m3 + 3 * (x_t - mean) * m2 / t - (t - 1) * (t - 2) * pow(x_t - mean, 3) / pow(t, 2)
+                mean = (t * self.__time_mean - x_t_time) / (t - 1)
+                m2 = self.__time_m2 - (x_t_time - mean) * (x_t_time - self.__time_mean)
+                m3 = self.__time_m3 + 3 * (x_t_time - mean) * m2 / t - (t - 1) * (t - 2) * pow(x_t_time - mean, 3) / pow(t, 2)
 
-                m4 = self.__m4 + 4 * (x_t - mean) * m3 / t - 6 * pow((x_t - mean) / t, 2) * m2 - \
-                     (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t - mean, 4) / pow(t, 3)
+                m4 = self.__time_m4 + 4 * (x_t_time - mean) * m3 / t - 6 * pow((x_t_time - mean) / t, 2) * m2 - \
+                     (t - 1) * (pow(t, 2) - 3 * t + 3) * pow(x_t_time - mean, 4) / pow(t, 3)
 
-                self.__mean = mean
-                self.__m2 = m2
-                self.__m3 = m3
-                self.__m4 = m4
+                self.__time_mean = mean
+                self.__time_m2 = m2
+                self.__time_m3 = m3
+                self.__time_m4 = m4
 
     @property
-    def __variance(self):
+    def __size_variance(self):
+        n = len(self.__sizes)
+
+        if n <= 1:
+            return 0
+
+        return self.__size_m2 / (n - 1)
+
+    @property
+    def __size_kurtosis(self):
+        n = len(self.__sizes)
+
+        if n == 0:
+            return -3
+
+        if n <= 3:
+            return kurtosis(self.__sizes, bias=False)
+
+        var = self.__size_variance
+
+        if var == 0:
+            return -3
+
+        return (n * (n + 1) * self.__size_m4) / ((n - 1) * (n - 2) * (n - 3) * pow(var, 2)) - \
+               (3 * pow(n - 1, 2)) / ((n - 2) * (n - 3))
+
+    @property
+    def __time_variance(self):
         n = len(self.__inter_arrival_times)
 
         if n <= 1:
             return 0
 
-        return self.__m2 / (n - 1)
+        return self.__time_m2 / (n - 1)
 
     @property
-    def __kurtosis(self):
+    def __time_kurtosis(self):
         n = len(self.__inter_arrival_times)
 
         if n == 0:
             return -3
 
-        if n <= self.__incremental_computation_threshold or n <= 2:
+        if n <= 3:
             return kurtosis(self.__inter_arrival_times, bias=False)
 
-        return (n * (n + 1) * self.__m4) / ((n - 1) * (n - 2) * (n - 3) * pow(self.__variance, 2)) - \
-                              (3 * pow(n - 1, 2)) / ((n - 2) * (n - 3))
+        var = self.__time_variance
+
+        if var == 0:
+            return -3
+
+        return (n * (n + 1) * self.__time_m4) / ((n - 1) * (n - 2) * (n - 3) * pow(var, 2)) - \
+               (3 * pow(n - 1, 2)) / ((n - 2) * (n - 3))
 
     @property
     def __rate(self):
@@ -136,14 +245,56 @@ class Classifier:
 
         return len(self.__packets) / (self.__packets[-1].time - self.__packets[0].time)
 
-    def get_features(self):
-        time = "null" if len(self.__packets) == 0 else str(self.__packets[-1].time)
+    @property
+    def features(self):
+        return [self.__size_mean, self.__size_variance,
+                self.__time_mean, self.__time_variance,
+                self.__rate]
 
-        return "[ Time: " + time + ", " + \
-               "Packets: " + str(len(self.__packets)) + ", " + \
-               "Mean: " + str(self.__mean) + " ms, " + \
-               "Variance: " + str(self.__variance) + " ms, " + \
-               "Kurtosis: " + str(self.__kurtosis) + ", " + \
-               "Rate: " + str(self.__rate) + " packets/s ]"
+    def train(self, x, y):
+        """
+        Train the SVM.
 
+        :param x: training data (array of data, where each entry is an array of features)
+        :param y: labels corresponding to the provided data
+        :return accuracy
+        """
 
+        # Divide data into training and test sets
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20)
+
+        # Train and evaluate accuracy
+        self.__svc.fit(x_train, y_train)
+        y_pred = self.__svc.predict(x_test)
+
+        return accuracy_score(y_test, y_pred)
+
+    def save_trained_model(self, path: str):
+        """
+        Save the trained model to disk.
+
+        :param path: where the model has to be saved
+        """
+        dump(self.__svc, path)
+
+    def load_trained_model(self, model_path: str):
+        """
+        Load pre-trained model from disk.
+
+        :param model_path: pre-trained model path
+        """
+        self.__svc = load(model_path)
+
+    def print_features(self):
+        time = 0 if len(self.__packets) == 0 else self.__packets[-1].time
+        features = self.features
+
+        print("[ Time: %.2f, Packets: %d, Size mean: %.2f bytes, Size var: %.2f bytes, Time mean: %.2f ms, Time var: %.2f ms, Rate: %.2f packets/s ]" % \
+              (time, len(self.__packets), features[0], features[1], features[2], features[3], features[4]))
+
+    def predict(self):
+        action = self.__svc.predict([self.features])[0]
+
+        if action != self.__action:
+            print("Action: " + str(action))
+            self.__action = action
