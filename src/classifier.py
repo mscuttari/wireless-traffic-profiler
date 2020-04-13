@@ -37,8 +37,8 @@ class Classifier:
         self.__time_m3 = 0
         self.__time_m4 = 0
 
-        self.__svc = OneVsRestClassifier(BaggingClassifier(SVC(max_iter=20000)))
-        self.__action = '-'
+        self.__svc = OneVsRestClassifier(SVC(max_iter=20000))
+        self.__state = '-'
 
     def add(self, packet):
         packet.time = float(packet.time)
@@ -295,6 +295,6 @@ class Classifier:
     def predict(self):
         action = self.__svc.predict([self.features])[0]
 
-        if action != self.__action:
+        if action != self.__state:
             print("Action: " + str(action))
-            self.__action = action
+            self.__state = action

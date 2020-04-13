@@ -27,10 +27,12 @@ if __name__ == "__main__":
     mac = mac.replace("-", ":")
     filter = "wlan.da == " + mac + " || wlan.sa == " + mac + " || wlan.fc.type_subtype == 0x0008"
 
+    # Create the classifier and load the pre-trained model
     classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
     classifier.load_trained_model(model)
     print("Loaded pre-trained model " + model)
 
+    # Start the live capture
     cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
 
     start = datetime.datetime.now()
@@ -43,12 +45,10 @@ if __name__ == "__main__":
             pass
 
         now = datetime.datetime.now()
-        print("Time: %.2f" % float(packet.time))
-        classifier.print_features()
 
         if (now - start) / timedelta(seconds=1) > 2:
             start = now
-
+            classifier.print_features()
             classifier.predict()
 
         classifier.update_current_time(float(packet.time))
