@@ -1,57 +1,49 @@
 import datetime
+import json
 import pyshark
 import re
 import sys
-import matplotlib
-import matplotlib.pyplot as plt
-import numpy as np
-import csv
 
 from classifier import Classifier
 from datetime import timedelta
 
 
 class Trainer:
-    def __init__(self, window_size: int, mac: str):
+    def __init__(self, window_size: int):
         self.__window_size = window_size
-        self.__mac = mac
         self.__x = []
         self.__y = []
         self.__classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
         self.__trained = False
 
-    def load_capture(self):
+    def menu_load_capture(self):
+        file = input("Capture file: ")
+        mac = input("MAC address: ")
+        direction = input("Traffic direction (D = download, U = upload): ").upper()
+        clazz = input("Traffic class: ")
+
+        self.load_capture(file=file, mac=mac, direction=direction, clazz=clazz)
+
+    def load_capture(self, file, mac, direction, clazz):
         """
         Parse a capture file and extract the features to be used to train the model
         """
-
-        print("Capture file: ", end='')
-        file = input()
-
-        if self.__mac is None:
-            print("MAC address: ", end='')
-            mac = input()
-        else:
-            print("MAC address (leave empty to use %s): " % self.__mac, end='')
-            mac = input()
-            if not mac: mac = self.__mac
 
         if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac):
             print("Invalid MAC address")
             return
 
-        mac = mac.replace("-", ":")
-
-        print("Traffic direction (D = download, U = upload): ", end='')
-        direction = input().upper()
-
         if direction != 'D' and direction != 'U':
             print("Invalid traffic direction")
             return
 
-        print("Traffic class: ", end='')
-        traffic_class = input()
+        print("----------------------------------------------------------")
+        print("Capture file: %s" % file)
+        print("MAC address: %s" % mac)
+        print("Traffic direction: %s" % direction)
+        print("Class: %s" % clazz)
 
+        mac = mac.replace("-", ":")
         filter = "((wlan.da == " + mac + " || wlan.sa == " + mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
         cap = pyshark.FileCapture(file, only_summaries=True, display_filter=filter)
         classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
@@ -77,23 +69,28 @@ class Trainer:
             if now - start > window_size / 3:
                 samples_counter += 1
                 self.__x.append(classifier.features)
-                self.__y.append(traffic_class)
+                self.__y.append(clazz)
 
         cap.close()
 
-        print("%d packets processed" % packet_counter)
+        print("\n%d packets processed" % packet_counter)
         print("%d samples added" % samples_counter)
+        print("----------------------------------------------------------\n")
 
-    def train(self):
+    def menu_train(self):
         """
         Train the classifier.
         """
 
-        accuracy = self.__classifier.train(self.__x, self.__y)
+        print("Training started")
+        start = datetime.datetime.now()
+        self.__classifier.train(self.__x, self.__y)
         self.__trained = True
-        print("Classifier trained. Accuracy = " + str(accuracy))
+        end = datetime.datetime.now()
+        elapsed = (end - start) / timedelta(seconds=1)
+        print("Classifier trained. Took %d seconds" % elapsed)
 
-    def save(self):
+    def menu_save(self):
         """
         Save the trained model to file.
         """
@@ -110,13 +107,27 @@ class Trainer:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python %s window_size [mac_address]" % sys.argv[0])
+        print("Usage: python %s [config_file]" % sys.argv[0])
         sys.exit(1)
 
-    window_size = int(sys.argv[1])
-    mac = sys.argv[2] if len(sys.argv) == 3 else None
+    window_size = None
+    trainer = None
 
-    trainer = Trainer(window_size=window_size, mac=mac)
+    if len(sys.argv) == 2:
+        with open(sys.argv[1]) as config_file:
+            config = json.load(config_file)
+
+            if config['window_size']: window_size = config['window_size']
+            trainer = Trainer(window_size=window_size)
+
+            for capture in config['captures']:
+                trainer.load_capture(capture['file'], capture['mac'], capture['direction'], capture['class'])
+
+    if window_size is None:
+        window_size = int(input("Window size (in seconds): "))
+
+    if trainer is None:
+        trainer = Trainer(window_size=window_size)
 
     while True:
         print("Select an option:")
@@ -130,15 +141,15 @@ if __name__ == "__main__":
         print()
 
         if choice == 1:
-            trainer.load_capture()
+            trainer.menu_load_capture()
             print()
 
         elif choice == 2:
-            trainer.train()
+            trainer.menu_train()
             print()
 
         elif choice == 3:
-            trainer.save()
+            trainer.menu_save()
             print()
 
         elif choice == 4:

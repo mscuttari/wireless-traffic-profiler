@@ -2,11 +2,12 @@ import pyshark
 import re
 import sys
 import datetime
-from datetime import timedelta
+import time
 
 from classifier import Classifier
+from datetime import timedelta
 
-WINDOW_SIZE_DEFAULT = 5
+WINDOW_SIZE_DEFAULT = 10
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
@@ -23,35 +24,35 @@ if __name__ == "__main__":
         print("Invalid MAC address")
         sys.exit(1)
 
-    # Capture only the data packets involving the specified MAC address + all the probe requests to track time
+    # Capture only the data packets involving the specified MAC address + all the probe requests to better track time
     mac = mac.replace("-", ":")
     filter = "((wlan.da == " + mac + " || wlan.sa == " + mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
 
     # Create the classifier and load the pre-trained model
     classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
     classifier.load_trained_model(model)
-    print("Loaded pre-trained model " + model)
+
+    # Print configuration parameters
+    print("Interface: %s" % interface)
+    print("MAC address: %s" % mac)
+    print("Pre-trained model: %s" % model)
+    print("Window size: %d" % window_size, end="\n\n")
 
     # Start the live capture
     cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
-
     start = datetime.datetime.now()
 
-    for packet in cap.sniff_continuously():
-        try:
+    try:
+        for packet in cap.sniff_continuously():
             if packet.destination == mac:
                 classifier.add(packet)
-        except:
-            pass
 
-        now = datetime.datetime.now()
+            now = datetime.datetime.now()
+            classifier.update_current_time(float(packet.time))
 
-        if ((now - start) / timedelta(microseconds=1000)) / 1000 > window_size / 2:
-            start = now
-            classifier.print_features()
-            classifier.predict()
+            if ((now - start) / timedelta(seconds=1)) > 1:
+                start = now
+                classifier.predict()
 
-        classifier.update_current_time(float(packet.time))
-
-
-
+    except KeyboardInterrupt:
+        print("\nStopped")
