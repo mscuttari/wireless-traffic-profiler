@@ -1,50 +1,48 @@
+import argparse
+import datetime
 import pyshark
 import re
 import sys
-import datetime
-import time
 
 from classifier import Classifier
 from datetime import timedelta
 
-WINDOW_SIZE_DEFAULT = 10
-
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("Usage: python %s interface_name mac_address model [window_size]" % sys.argv[0])
-        sys.exit(1)
-
-    interface = sys.argv[1]     # Wireless interface to listen on
-    mac = sys.argv[2].lower()   # MAC address of the machine whose traffic has to be profiled
-    model = sys.argv[3]
-    window_size = WINDOW_SIZE_DEFAULT if len(sys.argv) == 4 else int(sys.argv[4])   # Window size in seconds
+    # Configuration parameters
+    parser = argparse.ArgumentParser(description="Wireless encrypted traffic classifier")
+    parser.add_argument("interface", help="name of the wireless interface to listen on", metavar="<interface_name>")
+    parser.add_argument("mac", help="MAC address of the device whose traffic has to be profiled", metavar="<mac_address>")
+    parser.add_argument("model", help="pre-trained model file", metavar="<model_path>")
+    parser.add_argument("--debug", help="enable debug mode", action="store_true")
+    args = parser.parse_args()
 
     # Check if the MAC address is valid
-    if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac):
+    args.mac = args.mac.lower()
+
+    if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", args.mac):
         print("Invalid MAC address")
         sys.exit(1)
 
     # Capture only the data packets involving the specified MAC address + all the probe requests to better track time
-    mac = mac.replace("-", ":")
-    filter = "((wlan.da == " + mac + " || wlan.sa == " + mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
+    args.mac = args.mac.replace("-", ":")
+    filter = "((wlan.da == " + args.mac + " || wlan.sa == " + args.mac + ") && wlan.fc.type_subtype == 0x0028) || wlan.fc.type_subtype == 0x0008"
 
     # Create the classifier and load the pre-trained model
-    classifier = Classifier(window_size=window_size, incremental_computation_threshold=50)
-    classifier.load_trained_model(model)
+    classifier = Classifier(incremental_computation_threshold=50, debug=args.debug)
+    classifier.load_trained_model(args.model)
 
     # Print configuration parameters
-    print("Interface: %s" % interface)
-    print("MAC address: %s" % mac)
-    print("Pre-trained model: %s" % model)
-    print("Window size: %d" % window_size, end="\n\n")
+    print("Interface: %s" % args.interface)
+    print("Profiled MAC address: %s" % args.mac)
+    print("Pre-trained model: %s" % args.model, end="\n\n")
 
     # Start the live capture
-    cap = pyshark.LiveCapture(interface=interface, only_summaries=True, display_filter=filter)
+    cap = pyshark.LiveCapture(interface=args.interface, only_summaries=True, display_filter=filter)
     start = datetime.datetime.now()
 
     try:
         for packet in cap.sniff_continuously():
-            if packet.destination == mac:
+            if packet.destination == args.mac:
                 classifier.add(packet)
 
             now = datetime.datetime.now()

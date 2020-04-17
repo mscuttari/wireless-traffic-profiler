@@ -7,12 +7,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
 
 
 class Classifier:
 
-    def __init__(self, window_size: int, incremental_computation_threshold: int):
+    def __init__(self, incremental_computation_threshold: int, window_size: int = 10, debug: bool = False):
         """
         :param window_size: packets window size in seconds
         :param incremental_computation_threshold: number of packets after which the statistical information must be
@@ -22,6 +21,7 @@ class Classifier:
 
         self.__window_size = window_size
         self.__incremental_computation_threshold = incremental_computation_threshold
+        self.__debug = debug
 
         self.__packets = []              # Arrived packets
         self.__sizes = []                # Position i contains the size of packet i of __packets
@@ -35,7 +35,7 @@ class Classifier:
         self.__t_mean = 0
         self.__t_m2 = 0
 
-        self.__svc = OneVsRestClassifier(SVC(max_iter=30000), n_jobs=-1)
+        self.__svc = OneVsRestClassifier(SVC(max_iter=30000))
         self.__scaler = StandardScaler()
 
         self.__state_history = []
@@ -196,44 +196,46 @@ class Classifier:
 
         # Print train accuracy
         print("Confusion matrix:\n" + str(confusion_matrix(y_test, y_pred)) + "\n")
-
-        tree = DecisionTreeClassifier()
-        tree.fit(x_train, y_train)
-        print("Features importance: " + str(tree.feature_importances_) + "\n")
-
         print("Test accuracy: " + str(accuracy_score(y_test, y_pred)) + "\n")
 
     def save_trained_model(self, path: str):
         """
-        Save the trained model to file.
-        The saved model includes the scaler used in the training process, in order to allow for
-        normalization of live features using the same normalization parameters as in training phase.
+        Save window size, trained model and scaler to file.
+        The window size is included in order to avoid mismatches between the one used during training and the
+        one used for live analysis.
+        The scaler is included in order to allow for normalization of live features using the same
+        normalization parameters as in training phase.
 
         :param path: where the model has to be saved
         """
-        dump([self.__svc, self.__scaler], path)
+
+        dump([self.__window_size, self.__svc, self.__scaler], path)
 
     def load_trained_model(self, model_path: str):
         """
-        Load pre-trained model and scaler from file.
+        Load windows size, pre-trained model and scaler from file.
 
         :param model_path: pre-trained model path
         """
-        self.__svc, self.__scaler = load(model_path)
+
+        self.__window_size, self.__svc, self.__scaler = load(model_path)
 
     def predict(self):
         features = self.features
         data = [features]
-        state = self.__svc.predict(self.__scaler.transform(data))[0]
+        predicted_state = self.__svc.predict(self.__scaler.transform(data))[0]
 
         if len(self.__state_history) == self.__window_size:
             self.__state_history.pop(0)
 
-        self.__state_history.append(state)
-        state = Counter(self.__state_history).most_common(n=1)[0][0]
-        print("Features: %s, States: %s" % (features, Counter(self.__state_history).most_common()))
+        self.__state_history.append(predicted_state)
+        most_probable_state = Counter(self.__state_history).most_common(n=1)[0][0]
 
-        if self.__state != state:
-            self.__state = state
-            print("Features: %s, State: %s" % (features, state))
-            #print("\r%s" % state, end='')
+        if self.__debug:
+            print("Features: %s, States: %s" % (features, Counter(self.__state_history).most_common()))
+
+        if self.__state != most_probable_state:
+            self.__state = most_probable_state
+
+            if not self.__debug:
+                print("\r[ Activitiy: %s ]\033[K" % most_probable_state, end='')

@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import json
 import pyshark
@@ -21,6 +22,7 @@ class Trainer:
         mac = input("MAC address: ")
         direction = input("Traffic direction (D = download, U = upload): ").upper()
         clazz = input("Traffic class: ")
+        print()
 
         self.load_capture(file=file, mac=mac, direction=direction, clazz=clazz)
 
@@ -106,15 +108,16 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python %s [config_file]" % sys.argv[0])
-        sys.exit(1)
+    # Configuration parameters
+    parser = argparse.ArgumentParser(description="Train script for the wireless encrypted traffic classifier")
+    parser.add_argument("--config", help="configuration file containing the window size and the captures to be loaded", metavar="<file_path>")
+    args = parser.parse_args()
 
     window_size = None
     trainer = None
 
-    if len(sys.argv) == 2:
-        with open(sys.argv[1]) as config_file:
+    if args.config is not None:
+        with open(args.config) as config_file:
             config = json.load(config_file)
 
             if config['window_size']: window_size = config['window_size']
@@ -129,6 +132,7 @@ if __name__ == "__main__":
     if trainer is None:
         trainer = Trainer(window_size=window_size)
 
+    # Menu loop
     while True:
         print("Select an option:")
         print(" 1. Load capture file")
