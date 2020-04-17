@@ -238,4 +238,4 @@ class Classifier:
             self.__state = most_probable_state
 
             if not self.__debug:
-                print("\r[ Activitiy: %s ]\033[K" % most_probable_state, end='')
+                print("\r[ Activity: %s ]\033[K" % most_probable_state, end='')
