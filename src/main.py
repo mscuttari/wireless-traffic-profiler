@@ -49,6 +49,8 @@ if __name__ == "__main__":
     start = datetime.datetime.now()
 
     try:
+        activity = None
+
         for packet in cap.sniff_continuously():
             if packet.destination == args.mac:
                 classifier.add(packet)
@@ -58,7 +60,13 @@ if __name__ == "__main__":
 
             if ((now - start) / timedelta(seconds=1)) > 1:
                 start = now
-                classifier.predict()
+                prediction = classifier.predict()
+
+                if not prediction == activity:
+                    activity = prediction
+
+                    if not args.debug:
+                        print("\r[ Activity: %s ]\033[K" % activity, end='')
 
     except KeyboardInterrupt:
         print("\nStopped")

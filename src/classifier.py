@@ -47,7 +47,6 @@ class Classifier:
         self.__scaler = StandardScaler()
 
         self.__state_history = []
-        self.__state = None
 
     def add(self, packet):
         packet.time = float(packet.time)
@@ -147,11 +146,11 @@ class Classifier:
                 self.__t_m2 = m2
 
     @property
-    def __size_mean(self):
+    def __size_mean(self) -> float:
         return self.__s_mean
 
     @property
-    def __size_variance(self):
+    def __size_variance(self) -> float:
         n = len(self.__sizes)
 
         if n <= 1:
@@ -160,11 +159,11 @@ class Classifier:
         return min(self.__s_m2 / (n - 1), n * pow(2304 / 2, 2) / (n - 1))
 
     @property
-    def __time_mean(self):
+    def __time_mean(self) -> float:
         return min(self.__t_mean, self.__window_size * 1000)
 
     @property
-    def __time_variance(self):
+    def __time_variance(self) -> float:
         n = len(self.__inter_arrival_times)
 
         if n <= 1:
@@ -174,11 +173,11 @@ class Classifier:
         return min(variance, n * pow(self.__window_size * 1000 / 2, 2) / (n - 1))
 
     @property
-    def __rate(self):
+    def __rate(self) -> float:
         return len(self.__packets) / self.__window_size
 
     @property
-    def features(self):
+    def features(self) -> list:
         return [self.__size_mean, self.__size_variance,
                 self.__time_mean, self.__time_variance,
                 self.__rate]
@@ -228,7 +227,13 @@ class Classifier:
 
         self.__window_size, self.__svc, self.__scaler = load(model_path)
 
-    def predict(self):
+    def predict(self) -> str:
+        """
+        Determine the current device activity.
+
+        :return: network activity type
+        """
+
         features = self.features
         data = [features]
         predicted_state = self.__svc.predict(self.__scaler.transform(data))[0]
@@ -242,8 +247,4 @@ class Classifier:
         if self.__debug:
             print("Features: %s, States: %s" % (features, Counter(self.__state_history).most_common()))
 
-        if self.__state != most_probable_state:
-            self.__state = most_probable_state
-
-            if not self.__debug:
-                print("\r[ Activity: %s ]\033[K" % most_probable_state, end='')
+        return most_probable_state
