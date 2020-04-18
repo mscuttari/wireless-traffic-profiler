@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# Classifier starter
+
+__author__ = "Michele Scuttari"
+__copyright__ = "Copyright 2020 Michele Scuttari"
+__license__ = "GPL"
+__version__ = "1.0"
+
 import argparse
 import datetime
 import pyshark
