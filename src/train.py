@@ -32,9 +32,9 @@ class Trainer:
         clazz = input("Traffic class: ")
         print()
 
-        self.load_capture(file=file, mac=mac, direction=direction, clazz=clazz)
+        self.load_capture(file=file, mac=mac, clazz=clazz)
 
-    def load_capture(self, file, mac, direction, clazz):
+    def load_capture(self, file, mac, clazz):
         """
         Parse a capture file and extract the features to be used to train the model
         """
@@ -43,14 +43,9 @@ class Trainer:
             print("Invalid MAC address")
             return
 
-        if direction != 'D' and direction != 'U':
-            print("Invalid traffic direction")
-            return
-
         print("----------------------------------------------------------")
         print("Capture file: %s" % file)
         print("MAC address: %s" % mac)
-        print("Traffic direction: %s" % direction)
         print("Class: %s" % clazz)
 
         mac = mac.replace("-", ":")
@@ -66,9 +61,7 @@ class Trainer:
             packet_counter += 1
 
             try:
-                if direction == 'D' and packet.destination == mac:
-                    classifier.add(packet)
-                elif direction == 'U' and packet.source == mac:
+                if packet.destination == mac:
                     classifier.add(packet)
             except:
                 pass
