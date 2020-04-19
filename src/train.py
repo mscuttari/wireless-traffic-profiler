@@ -28,7 +28,6 @@ class Trainer:
     def menu_load_capture(self):
         file = input("Capture file: ")
         mac = input("MAC address: ")
-        direction = input("Traffic direction (D = download, U = upload): ").upper()
         clazz = input("Traffic class: ")
         print()
 
@@ -125,7 +124,7 @@ if __name__ == "__main__":
             trainer = Trainer(window_size=window_size)
 
             for capture in config['captures']:
-                trainer.load_capture(capture['file'], capture['mac'], capture['direction'], capture['class'])
+                trainer.load_capture(capture['file'], capture['mac'], capture['class'])
 
     if window_size is None:
         window_size = int(input("Window size (in seconds): "))
